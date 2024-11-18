@@ -1,0 +1,156 @@
+import cv2
+import mediapipe as mp
+import time
+import mss
+import numpy as np
+
+# Initialize MediaPipe Hands
+mpHands = mp.solutions.hands
+hands = mpHands.Hands()
+mpDraw = mp.solutions.drawing_utils
+
+pTime = 0
+cTime = 0
+
+# Set up screen capture with mss
+sct = mss.mss()
+monitor = {"top": 87, "left": 715, "width": 513, "height": 907}  # Adjust as needed
+
+# Function to calculate the openness percentage for each finger
+def calculate_finger_openness(mcp_angle, pip_angle, dip_angle=None):
+    max_mcp_bend = 90  # Max angle for MCP joint
+    max_pip_bend = 120  # Max angle for PIP joint
+    max_dip_bend = 90   # Max angle for DIP joint (if present)
+
+    mcp_percentage = min(mcp_angle / max_mcp_bend, 1.0)
+    pip_percentage = min(pip_angle / max_pip_bend, 1.0)
+    if dip_angle is not None:
+        dip_percentage = min(dip_angle / max_dip_bend, 1.0)
+        finger_openness = (mcp_percentage + pip_percentage + dip_percentage) / 3.0 * 100
+    else:
+        finger_openness = (mcp_percentage + pip_percentage) / 2.0 * 100
+
+    return finger_openness
+
+# Function to calculate joint angles between three landmarks
+def calculate_angle(landmark_a, landmark_b, landmark_c):
+    vec_ab = np.array([landmark_b.x - landmark_a.x, landmark_b.y - landmark_a.y])
+    vec_bc = np.array([landmark_c.x - landmark_b.x, landmark_c.y - landmark_b.y])
+    norm_ab = np.linalg.norm(vec_ab)
+    norm_bc = np.linalg.norm(vec_bc)
+    
+    if norm_ab == 0 or norm_bc == 0:
+        return 0
+
+    cos_angle = np.dot(vec_ab, vec_bc) / (norm_ab * norm_bc)
+    angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
+    return np.degrees(angle)
+
+# Function to calculate the openness of each finger
+def get_finger_openness(hand_landmarks, img):
+    h, w, _ = img.shape
+
+    # Thumb
+    thumb_mcp = calculate_angle(hand_landmarks[1], hand_landmarks[2], hand_landmarks[3])
+    thumb_ip = calculate_angle(hand_landmarks[2], hand_landmarks[3], hand_landmarks[4])
+    thumb_openness = calculate_finger_openness(thumb_mcp, thumb_ip)
+
+    # Index finger
+    index_mcp = calculate_angle(hand_landmarks[5], hand_landmarks[6], hand_landmarks[7])
+    index_pip = calculate_angle(hand_landmarks[6], hand_landmarks[7], hand_landmarks[8])
+    index_openness = calculate_finger_openness(index_mcp, index_pip)
+
+    # Middle finger
+    middle_mcp = calculate_angle(hand_landmarks[9], hand_landmarks[10], hand_landmarks[11])
+    middle_pip = calculate_angle(hand_landmarks[10], hand_landmarks[11], hand_landmarks[12])
+    middle_openness = calculate_finger_openness(middle_mcp, middle_pip)
+
+    # Ring finger
+    ring_mcp = calculate_angle(hand_landmarks[13], hand_landmarks[14], hand_landmarks[15])
+    ring_pip = calculate_angle(hand_landmarks[14], hand_landmarks[15], hand_landmarks[16])
+    ring_openness = calculate_finger_openness(ring_mcp, ring_pip)
+
+    # Little finger
+    little_mcp = calculate_angle(hand_landmarks[17], hand_landmarks[18], hand_landmarks[19])
+    little_pip = calculate_angle(hand_landmarks[18], hand_landmarks[19], hand_landmarks[20])
+    little_openness = calculate_finger_openness(little_mcp, little_pip)
+
+    return {
+        "Thumb": thumb_openness,
+        "Index": index_openness,
+        "Middle": middle_openness,
+        "Ring": ring_openness,
+        "Little": little_openness
+    }
+
+# Function to interpolate between green and red based on openness percentage
+def get_color_by_openness(openness):
+    
+    normalized_openness = min(openness / 80.0, 1.0)  # Cap it at 1 (100%)
+
+    r =  int(normalized_openness * 255) # More closed = more red
+    g =  int((1 - normalized_openness) * 255) # More open = more green
+    return (0, g, r)
+
+while True:
+    # Capture the screen
+    screen_shot = sct.grab(monitor)
+    
+    # Convert the screenshot to a NumPy array
+    img = np.array(screen_shot)
+
+    # Convert from BGRA to BGR for OpenCV
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
+    # Convert the image to RGB for MediaPipe
+    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    
+    # Process the frame with MediaPipe to detect hands
+    results = hands.process(imgRGB)
+
+    # Draw hand landmarks if detected
+    if results.multi_hand_landmarks:
+        for handLms in results.multi_hand_landmarks:
+            # Calculate finger openness for each finger
+            finger_openness = get_finger_openness(handLms.landmark, img)
+            
+            # For each finger, draw the corresponding landmarks with their openness-based color
+            finger_ids = {
+                "Thumb": [2, 3, 4],
+                "Index": [6, 7, 8],
+                "Middle": [10, 11, 12],
+                "Ring": [14, 15, 16],
+                "Little": [18, 19, 20]
+            }
+            
+            for finger, ids in finger_ids.items():
+                openness = finger_openness[finger]
+                color = get_color_by_openness(openness)  # Get color based on openness
+                
+                # Draw circles for each landmark on the finger with the same color
+                for id in ids:
+                    h, w, _ = img.shape
+                    cx, cy = int(handLms.landmark[id].x * w), int(handLms.landmark[id].y * h)
+                    cv2.circle(img, (cx, cy), 12, color, cv2.FILLED)  # Smaller circles (size 8)
+
+            # Draw hand landmarks and connections
+            mpDraw.draw_landmarks(img, handLms, mpHands.HAND_CONNECTIONS)
+
+    # FPS calculation
+    cTime = time.time()
+    fps = 1 / (cTime - pTime)
+    pTime = cTime
+
+    # Display FPS on the screen
+    cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN, 3, (255, 0, 255), 3)
+
+    # Display the screen capture with hand tracking
+    cv2.imshow("Screen Capture Hand Tracking", img)
+
+    # Break the loop on pressing 'q'
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Cleanup
+sct.close()
+cv2.destroyAllWindows()
