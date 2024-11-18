@@ -1,0 +1,212 @@
+import cv2
+import mediapipe as mp
+import numpy as np
+
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+BaseOptions = mp.tasks.BaseOptions
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+HandLandmarkerResult = mp.tasks.vision.HandLandmarkerResult
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+# Function to check if thumb is bent
+def is_thumb_bent(hand_landmarks):
+    # Get the required thumb landmarks
+    thumb_cmc = hand_landmarks[1] 
+    thumb_mcp = hand_landmarks[2]  
+    thumb_ip = hand_landmarks[3]   
+    thumb_tip = hand_landmarks[4]  
+
+    # Calculate vectors between the thumb landmarks
+    vec_cmc_mcp = np.array([thumb_mcp.x - thumb_cmc.x, thumb_mcp.y - thumb_cmc.y])
+    vec_mcp_ip = np.array([thumb_ip.x - thumb_mcp.x, thumb_ip.y - thumb_mcp.y])
+    vec_ip_tip = np.array([thumb_tip.x - thumb_ip.x, thumb_tip.y - thumb_ip.y])
+
+    # Calculate the angles between the vectors
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+
+    # Determine if the thumb is bent based on angle thresholds
+    if angle_mcp < 12 or angle_ip < 12:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+
+#Function to check if pointing finger is bent
+def is_pointy_bent(hand_landmarks):
+    # Get the required pointy landmarks
+    pointy_cmc = hand_landmarks[5]  
+    pointy_mcp = hand_landmarks[6] 
+    pointy_ip = hand_landmarks[7]   
+    pointy_tip = hand_landmarks[8] 
+
+    # Calculate vectors between the pointy landmarks
+    vec_cmc_mcp = np.array([pointy_mcp.x - pointy_cmc.x, pointy_mcp.y - pointy_cmc.y])
+    vec_mcp_ip = np.array([pointy_ip.x - pointy_mcp.x, pointy_ip.y - pointy_mcp.y])
+    vec_ip_tip = np.array([pointy_tip.x - pointy_ip.x, pointy_tip.y - pointy_ip.y])
+
+    # Calculate the angles between the vectors
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+
+    # Determine if the pointing finger is bent based on angle thresholds
+    if angle_mcp < 14 or angle_ip < 14:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+#Function to check if long finger is bent
+def is_long_bent(hand_landmarks):
+    # Get the required long finger landmarks
+    long_cmc = hand_landmarks[9]  
+    long_mcp = hand_landmarks[10] 
+    long_ip = hand_landmarks[11]  
+    long_tip = hand_landmarks[12]  
+
+    # Calculate vectors between the long finger landmarks
+    vec_cmc_mcp = np.array([long_mcp.x - long_cmc.x, long_mcp.y - long_cmc.y])
+    vec_mcp_ip = np.array([long_ip.x - long_mcp.x, long_ip.y - long_mcp.y])
+    vec_ip_tip = np.array([long_tip.x - long_ip.x, long_tip.y - long_ip.y])
+
+    # Calculate the angles between the vectors
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+
+    # Determine if the long finger is bent based on angle thresholds
+    if angle_mcp < 12 or angle_ip < 12:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+#Function to check if ring finger is bent
+def is_ring_bent(hand_landmarks):
+    # Get the required ring finger landmarks
+    ring_cmc = hand_landmarks[13]  
+    ring_mcp = hand_landmarks[14] 
+    ring_ip = hand_landmarks[15]  
+    ring_tip = hand_landmarks[16]  
+
+    # Calculate vectors between the ring finger landmarks
+    vec_cmc_mcp = np.array([ring_mcp.x - ring_cmc.x, ring_mcp.y - ring_cmc.y])
+    vec_mcp_ip = np.array([ring_ip.x - ring_mcp.x, ring_ip.y - ring_mcp.y])
+    vec_ip_tip = np.array([ring_tip.x - ring_ip.x, ring_tip.y - ring_ip.y])
+
+    # Calculate the angles between the vectors
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+
+    # Determine if the ring finger is bent based on angle thresholds
+    if angle_mcp < 8 or angle_ip < 8:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+#Function to check if little finger is bent
+def is_little_bent(hand_landmarks):
+    # Get the required little finger landmarks
+    little_cmc = hand_landmarks[17]  
+    little_mcp = hand_landmarks[18] 
+    little_ip = hand_landmarks[19]  
+    little_tip = hand_landmarks[20]  
+
+    # Calculate vectors between the little finger landmarks
+    vec_cmc_mcp = np.array([little_mcp.x - little_cmc.x, little_mcp.y - little_cmc.y])
+    vec_mcp_ip = np.array([little_ip.x - little_mcp.x, little_ip.y - little_mcp.y])
+    vec_ip_tip = np.array([little_tip.x - little_ip.x, little_tip.y - little_ip.y])
+
+    # Calculate the angles between the vectors
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+
+    # Determine if the little finger is bent based on angle thresholds
+    if angle_mcp < 10 or angle_ip < 10:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+# Callback function to process the landmarks
+def print_result(result: HandLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
+    for hand_landmarks in result.hand_landmarks:
+        bent_fingers = []  # List to store names of bent fingers
+        
+        if is_thumb_bent(hand_landmarks):
+            bent_fingers.append("Thumb")
+        
+        if is_pointy_bent(hand_landmarks):
+            bent_fingers.append("Pointy")
+        
+        if is_long_bent(hand_landmarks):
+            bent_fingers.append("Long finger")
+        
+        if is_ring_bent(hand_landmarks):
+            bent_fingers.append("Ring finger")
+        
+        if is_little_bent(hand_landmarks):
+            bent_fingers.append("Little finger")
+        
+        # Print all bent fingers for this hand
+        if bent_fingers:
+            print(f"Bent fingers at timestamp {timestamp_ms} ms: {', '.join(bent_fingers)}")
+
+
+options = HandLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path='/Users/tobia/OneDrive/Programmering/landmarker.task'),
+    running_mode=VisionRunningMode.LIVE_STREAM,
+    result_callback=print_result)
+detector = vision.HandLandmarker.create_from_options(options)
+
+with HandLandmarker.create_from_options(options) as landmarker:
+  # The landmarker is initialized. Use it here.
+  # ...
+
+    # Start capturing video from the webcam
+    cap = cv2.VideoCapture(0)
+    
+    # Check if the webcam opened successfully
+    if not cap.isOpened():
+        print("Error: Could not open webcam.")
+        exit()
+    
+    # Get the frames per second (FPS) of the webcam
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    # Initialize MediaPipe's Image class
+    mp_image = mp.Image
+    
+    # Initialize the frame counter
+    frame_counter = 0
+
+    while True:
+        ret, frame = cap.read()
+        
+        if not ret:
+            print("Error: Could not read frame.")
+            break
+        
+        # Convert the frame from BGR (OpenCV default) to RGB (MediaPipe expects RGB)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Create a MediaPipe Image object
+        image = mp_image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        
+        # Calculate the frame timestamp in milliseconds
+        frame_timestamp_ms = int((frame_counter / fps) * 1000)
+    
+        # Now, `image` can be used with other MediaPipe processing tasks
+        landmarker.detect_async(image, frame_timestamp_ms)
+        
+        # Increment the frame counter
+        frame_counter += 1
+
+        # Optional: Display the original frame (for visualization)
+        cv2.imshow('Webcam Feed', frame)
+        
+        # Break the loop if 'q' is pressed
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    
+    # Release the webcam and close all OpenCV windows
+    cap.release()
+    cv2.destroyAllWindows()
