@@ -1,0 +1,228 @@
+import cv2
+import numpy as np
+import mss
+import mediapipe as mp
+import pyttsx3
+import threading
+import queue
+
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+# MediaPipe setup
+BaseOptions = mp.tasks.BaseOptions
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+HandLandmarkerResult = mp.tasks.vision.HandLandmarkerResult
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+# Function to check if thumb is bent
+def is_thumb_bent(hand_landmarks):
+    thumb_cmc = hand_landmarks[1] 
+    thumb_mcp = hand_landmarks[2]  
+    thumb_ip = hand_landmarks[3]   
+    thumb_tip = hand_landmarks[4]  
+    vec_cmc_mcp = np.array([thumb_mcp.x - thumb_cmc.x, thumb_mcp.y - thumb_cmc.y])
+    vec_mcp_ip = np.array([thumb_ip.x - thumb_mcp.x, thumb_ip.y - thumb_mcp.y])
+    vec_ip_tip = np.array([thumb_tip.x - thumb_ip.x, thumb_tip.y - thumb_ip.y])
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+    #print(f"Thumb angles: MCP {angle_mcp}, IP {angle_ip}")  # Debugging
+    if angle_mcp < 25 or angle_ip < 10:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+# Similar logic for other fingers
+def is_index_bent(hand_landmarks):
+    index_cmc = hand_landmarks[5]  
+    index_mcp = hand_landmarks[6] 
+    index_ip = hand_landmarks[7]   
+    index_tip = hand_landmarks[8] 
+    vec_cmc_mcp = np.array([index_mcp.x - index_cmc.x, index_mcp.y - index_cmc.y])
+    vec_mcp_ip = np.array([index_ip.x - index_mcp.x, index_ip.y - index_mcp.y])
+    vec_ip_tip = np.array([index_tip.x - index_ip.x, index_tip.y - index_ip.y])
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+    #print(f"Index angles: MCP {angle_mcp}, IP {angle_ip}")  # Debugging
+    if angle_mcp < 30 or angle_ip < 18:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+# Functions for the remaining fingers (long, ring, little) follow similar logic
+def is_long_bent(hand_landmarks):
+    long_cmc = hand_landmarks[9]  
+    long_mcp = hand_landmarks[10] 
+    long_ip = hand_landmarks[11]  
+    long_tip = hand_landmarks[12]  
+    vec_cmc_mcp = np.array([long_mcp.x - long_cmc.x, long_mcp.y - long_cmc.y])
+    vec_mcp_ip = np.array([long_ip.x - long_mcp.x, long_ip.y - long_mcp.y])
+    vec_ip_tip = np.array([long_tip.x - long_ip.x, long_tip.y - long_ip.y])
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+    #print(f"Long angles: MCP {angle_mcp}, IP {angle_ip}")  # Debugging
+    if angle_mcp < 20 or angle_ip < 5:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+def is_ring_bent(hand_landmarks):
+    ring_cmc = hand_landmarks[13]  
+    ring_mcp = hand_landmarks[14] 
+    ring_ip = hand_landmarks[15]  
+    ring_tip = hand_landmarks[16]  
+    vec_cmc_mcp = np.array([ring_mcp.x - ring_cmc.x, ring_mcp.y - ring_cmc.y])
+    vec_mcp_ip = np.array([ring_ip.x - ring_mcp.x, ring_ip.y - ring_mcp.y])
+    vec_ip_tip = np.array([ring_tip.x - ring_ip.x, ring_tip.y - ring_ip.y])
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+    #print(f"Ring angles: MCP {angle_mcp}, IP {angle_ip}")  # Debugging
+    if angle_mcp < 35:  # Adjust the threshold based on your needs
+        return False
+    else:
+        return True
+
+def is_little_bent(hand_landmarks):
+    little_cmc = hand_landmarks[17]  
+    little_mcp = hand_landmarks[18] 
+    little_ip = hand_landmarks[19]  
+    little_tip = hand_landmarks[20]  
+    vec_cmc_mcp = np.array([little_mcp.x - little_cmc.x, little_mcp.y - little_cmc.y])
+    vec_mcp_ip = np.array([little_ip.x - little_mcp.x, little_ip.y - little_mcp.y])
+    vec_ip_tip = np.array([little_tip.x - little_ip.x, little_tip.y - little_ip.y])
+    angle_mcp = np.degrees(np.arccos(np.dot(vec_cmc_mcp, vec_mcp_ip) / (np.linalg.norm(vec_cmc_mcp) * np.linalg.norm(vec_mcp_ip))))
+    angle_ip = np.degrees(np.arccos(np.dot(vec_mcp_ip, vec_ip_tip) / (np.linalg.norm(vec_mcp_ip) * np.linalg.norm(vec_ip_tip))))
+    #print(f"Little angles: MCP {angle_mcp}, IP {angle_ip}")  # Debugging
+    if angle_mcp > 30 or angle_ip > 30:  # Adjust the threshold based on your needs
+        return True
+    else:
+        return False
+
+
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+
+# Queue to hold speech tasks
+speech_queue = queue.Queue()
+
+# Flag to control the main loop and background thread
+running = True
+
+# Store the last message to avoid repeating the same speech
+last_message = None
+
+def speak_text():
+    while running or not speech_queue.empty():
+        try:
+            fingers_text = speech_queue.get(timeout=1)
+            if fingers_text is None:  # Check for stop signal
+                break
+
+            print(f"Speaking: {fingers_text}")  # Debugging output
+            engine.say(fingers_text)
+            engine.runAndWait()
+            speech_queue.task_done()
+        except queue.Empty:
+            continue
+
+# Start a background thread to handle speaking
+speech_thread = threading.Thread(target=speak_text, daemon=True)
+speech_thread.start()
+
+# Store the last message to avoid repeating the same speech
+last_message = None
+
+# Callback function to process hand landmarks
+def print_result(result: mp.tasks.vision.HandLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
+    global last_message  # Use the global variable to track the last message
+
+    for hand_landmarks in result.hand_landmarks:
+        bent_fingers = []
+        if is_thumb_bent(hand_landmarks):
+            bent_fingers.append("Thumb")
+        if is_index_bent(hand_landmarks):
+            bent_fingers.append("Index finger")
+        if is_long_bent(hand_landmarks):
+            bent_fingers.append("Long finger")
+        if is_ring_bent(hand_landmarks):
+            bent_fingers.append("Ring finger")
+        if is_little_bent(hand_landmarks):
+            bent_fingers.append("Little finger")
+
+        # Generate the text to speak
+        if bent_fingers:
+            fingers_text = f"Bent fingers are: {', '.join(bent_fingers)}"
+        else:
+            fingers_text = "No fingers are bent"
+
+        # Only add the message if it's different from the last one
+        if fingers_text != last_message:
+            # Clear the queue before adding a new message
+            with speech_queue.mutex:
+                speech_queue.queue.clear()
+
+            # Add new message to the queue
+            speech_queue.put(fingers_text)
+
+            # Update the last message
+            last_message = fingers_text
+
+
+
+
+
+# Set up the HandLandmarker with options
+options = mp.tasks.vision.HandLandmarkerOptions(
+    base_options=mp.tasks.BaseOptions(model_asset_path='/Users/tobia/Desktop/landmarker.task'),
+    running_mode=VisionRunningMode.LIVE_STREAM,
+    result_callback=print_result
+)
+
+# Start screen capture and hand tracking
+with mp.tasks.vision.HandLandmarker.create_from_options(options) as landmarker:
+    capture_region = {"top": 87, "left": 715, "width": 513, "height": 907}  # Adjust to your capture window
+
+    with mss.mss() as sct:
+        fps = 30  # Desired frame rate
+        frame_counter = 0
+
+        while running:
+            # Capture the screen region
+            screen_shot = sct.grab(capture_region)
+
+            # Convert the screenshot to a NumPy array and convert it from BGRA to BGR
+            frame = np.array(screen_shot)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+
+            # Convert frame to RGB (for MediaPipe)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # Create a MediaPipe Image object
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+            # Calculate the timestamp for the frame
+            frame_timestamp_ms = int((frame_counter / fps) * 1000)
+
+            # Detect hand landmarks asynchronously
+            landmarker.detect_async(mp_image, frame_timestamp_ms)
+
+            # Increment frame counter
+            frame_counter += 1
+
+            # Optional: Display the captured screen region
+            cv2.imshow('Screen Capture Feed', frame)
+
+            # Break the loop if 'q' is pressed
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                running = False  # Set the running flag to False to stop the loop
+                break
+
+        # Release resources and close windows
+        cv2.destroyAllWindows()
+
+# When stopping the program, signal the speech thread to stop and wait for it to finish
+speech_queue.put(None)  # Stop signal for the speech thread
+speech_thread.join(timeout=2)  # Wait for the thread to finish, with a timeout
+
+print("Program exited cleanly.")
